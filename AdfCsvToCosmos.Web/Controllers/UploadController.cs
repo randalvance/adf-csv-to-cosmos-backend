@@ -19,8 +19,8 @@ public class UploadController : ControllerBase
         _logger = logger;
         _configuration = configuration;
         var blobServiceBaseUrl = configuration.GetValue<string>("BlobStorageEndpoint");
-        _blobContainerClient = new BlobContainerClient(new Uri(Path.Combine(blobServiceBaseUrl, "uploaded")),
-                                                       new DefaultAzureCredential());
+        var credential = new DefaultAzureCredential();
+        _blobContainerClient = new BlobContainerClient(new Uri(Path.Combine(blobServiceBaseUrl, "uploaded")), credential);
     }
 
     [HttpGet("healthcheck")]
@@ -28,7 +28,7 @@ public class UploadController : ControllerBase
     {
         await _blobContainerClient.ExistsAsync();
 
-        return Ok($"Connection to Blob Okay.");
+        return Ok("Connection to Blob Okay.");
     }
 
     [HttpGet]

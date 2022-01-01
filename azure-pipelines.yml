@@ -1,6 +1,7 @@
 name: $(Build.DefinitionName)-$(Date:yyyyMMdd)-$(BuildID)
 
-trigger: none
+trigger:
+  - main
 
 variables:
   - name: ServiceConnection
