@@ -23,7 +23,7 @@ public class UploadController : ControllerBase
                                                        new DefaultAzureCredential());
     }
 
-    [HttpGet]
+    [HttpGet("healthcheck")]
     public async Task<IActionResult> HealthCheck()
     {
         await _blobContainerClient.ExistsAsync();
