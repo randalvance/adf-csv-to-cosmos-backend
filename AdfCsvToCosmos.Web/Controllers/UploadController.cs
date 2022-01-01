@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Azure.Identity;
 using Azure.Storage.Blobs;
 
 namespace AdfCsvToCosmos.Web.Controllers;
@@ -17,8 +18,17 @@ public class UploadController : ControllerBase
     {
         _logger = logger;
         _configuration = configuration;
-        var blobServiceClient = new BlobServiceClient(configuration.GetConnectionString("AzureStorage"));
-        _blobContainerClient =  blobServiceClient.GetBlobContainerClient("uploaded");
+        var blobServiceBaseUrl = configuration.GetValue<string>("BlobStorageEndpoint");
+        _blobContainerClient = new BlobContainerClient(new Uri(Path.Combine(blobServiceBaseUrl, "uploaded")),
+                                                       new DefaultAzureCredential());
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> HealthCheck()
+    {
+        await _blobContainerClient.ExistsAsync();
+
+        return Ok($"Connection to Blob Okay.");
     }
 
     [HttpGet]
@@ -30,14 +40,18 @@ public class UploadController : ControllerBase
         {
             return Ok();
         }
-        return StatusCode(204);
+
+        // Uploader in UI expects 204 if chunk was not found.
+        return StatusCode(StatusCodes.Status204NoContent);
     }
 
     [HttpPost]
     public async Task<IActionResult> Post([FromForm]int chunkNumber, [FromForm]string identifier)
     {
         var blobClient = _blobContainerClient.GetBlobClient($"{identifier}/{chunkNumber,0:00000000}");
+
         await blobClient.UploadAsync(Request.Form.Files.First().OpenReadStream());
+
         return Ok();
     }
 }
