@@ -100,7 +100,7 @@ public class UploadController : ControllerBase
         var database = _cosmosClient.GetDatabase("awesomedb");
         var container = database.GetContainer("people");
         var query = new QueryDefinition("Select * from people p where p.ImportIdentifier = @importIdentifier");
-        query.WithParameter("importIdentifier", pipelineRunId);
+        query.WithParameter("@importIdentifier", pipelineRunId);
         var iterator = container.GetItemQueryIterator<Person>(query);
 
         var people = new List<Person>();
