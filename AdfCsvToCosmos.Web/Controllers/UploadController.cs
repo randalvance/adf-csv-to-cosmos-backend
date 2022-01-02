@@ -86,7 +86,7 @@ public class UploadController : ControllerBase
         return new JsonResult(new { Status = response.Status });
     }
 
-    [HttpGet("data/{piplineRunId}")]
+    [HttpGet("data/{pipelineRunId}")]
     public async Task<IActionResult> GetData([FromRoute]string pipelineRunId, [FromQuery]int page, [FromQuery]int itemsPerPage)
     {
         var people = await GetDataAsync("people", pipelineRunId, page, itemsPerPage);
