@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Cosmos;
 using Microsoft.Azure.Management.DataFactory;
 using Microsoft.Rest;
 using Microsoft.Identity.Client;
@@ -6,6 +7,7 @@ using Azure.Identity;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Specialized;
 using Azure.Storage.Blobs.Models;
+using AdfCsvToCosmos.Web.Models;
 
 namespace AdfCsvToCosmos.Web.Controllers;
 
@@ -16,6 +18,7 @@ public class UploadController : ControllerBase
     private readonly ILogger<UploadController> _logger;
     private readonly IConfiguration _configuration;
     private BlobContainerClient _blobContainerClient;
+    private CosmosClient _cosmosClient;
 
     public UploadController(ILogger<UploadController> logger,
                             IConfiguration configuration)
@@ -25,6 +28,8 @@ public class UploadController : ControllerBase
         var blobServiceBaseUrl = configuration.GetValue<string>("BlobStorageEndpoint");
         var credential = new DefaultAzureCredential();
         _blobContainerClient = new BlobContainerClient(new Uri(Path.Combine(blobServiceBaseUrl, "uploaded")), credential);
+
+        _cosmosClient = new CosmosClient(_configuration.GetValue<string>("CosmosDbEndpoint"), credential);
     }
 
     [HttpGet("healthcheck")]
@@ -79,6 +84,35 @@ public class UploadController : ControllerBase
         
         var response = await client.PipelineRuns.GetAsync(resourceGroup, factoryName, piplineRunId);
         return new JsonResult(new { Status = response.Status });
+    }
+
+    [HttpGet("data/{piplineRunId}")]
+    public async Task<IActionResult> GetData(string pipelineRunId, int page, int itemsPerPage)
+    {
+        var people = await GetDataAsync("people", pipelineRunId, page, itemsPerPage);
+        var errors = await GetDataAsync("peopleErrors", pipelineRunId, page, itemsPerPage);
+
+        return new JsonResult(new { Items = people, Errors = errors });
+    }
+
+    private async Task<IEnumerable<Person>> GetDataAsync(string collection, string pipelineRunId, int page, int itemsPerPage)
+    {
+        var database = _cosmosClient.GetDatabase("awesomedb");
+        var container = database.GetContainer("people");
+        var iterator = container.GetItemQueryIterator<Person>(new QueryDefinition("Select * from people"));
+
+        var people = new List<Person>();
+
+        while (iterator.HasMoreResults)
+        {
+            FeedResponse<Person> currentResultSet = await iterator.ReadNextAsync();
+            foreach (Person person in currentResultSet)
+            {
+                people.Add(person);
+            }
+        }
+
+        return people;
     }
 
     private static string GetBlockId(string fileName, int chunkNumber)
