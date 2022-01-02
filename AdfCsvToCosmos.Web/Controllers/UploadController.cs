@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Management.DataFactory;
-using Microsoft.Azure.Management.DataFactory.Models;
 using Microsoft.Rest;
 using Microsoft.Identity.Client;
 using Azure.Identity;
@@ -36,20 +35,6 @@ public class UploadController : ControllerBase
         return Ok("Connection to Blob Okay.");
     }
 
-    [HttpGet]
-    public async Task<IActionResult> Get(int chunkNumber, long chunkSize, long currentChunkSize, long totalSize, string identifier, string filename, string relativePath, int totalChunks)
-    {
-        var blobClient = _blobContainerClient.GetBlobClient($"{identifier}");
-
-        if (await blobClient.ExistsAsync())
-        {
-            return Ok();
-        }
-
-        // Uploader in UI expects 204 if chunk was not found.
-        return StatusCode(StatusCodes.Status204NoContent);
-    }
-
     [HttpPost]
     public async Task<IActionResult> Post([FromForm]int chunkNumber,
                                           [FromForm]int totalChunks,
@@ -75,7 +60,7 @@ public class UploadController : ControllerBase
                 }
             });
 
-            var pipelineRunId = Guid.NewGuid().ToString(); // await RunPipelineAsync(identifier);
+            var pipelineRunId = await RunPipelineAsync(identifier);
 
             return new JsonResult(new { pipelineRunId = pipelineRunId });
         }
