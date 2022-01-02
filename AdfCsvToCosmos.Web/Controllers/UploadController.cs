@@ -75,12 +75,25 @@ public class UploadController : ControllerBase
                 }
             });
 
-            var pipelineRunId = await RunPipelineAsync(identifier);
+            var pipelineRunId = Guid.NewGuid().ToString(); // await RunPipelineAsync(identifier);
 
             return new JsonResult(new { pipelineRunId = pipelineRunId });
         }
 
         return Ok();
+    }
+
+    [HttpGet("pipeline-status/{piplineRunId}")]
+    public async Task<IActionResult> PipelineStatus(string piplineRunId)
+    {
+        var client = await CreateDataFactoryClientAsync();
+        var adfConfig = _configuration.GetSection("AzureDataFactory");
+        var resourceGroup = adfConfig.GetValue<string>("ResourceGroup");
+        var factoryName = adfConfig.GetValue<string>("DataFactoryName");
+        var pipelineName = adfConfig.GetValue<string>("PipelineName");
+        
+        var response = await client.PipelineRuns.GetAsync(resourceGroup, factoryName, piplineRunId);
+        return new JsonResult(new { Status = response.Status });
     }
 
     private static string GetBlockId(string fileName, int chunkNumber)
