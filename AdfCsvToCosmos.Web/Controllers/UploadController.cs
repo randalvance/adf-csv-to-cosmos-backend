@@ -87,7 +87,7 @@ public class UploadController : ControllerBase
     }
 
     [HttpGet("data/{piplineRunId}")]
-    public async Task<IActionResult> GetData(string pipelineRunId, int page, int itemsPerPage)
+    public async Task<IActionResult> GetData([FromRoute]string pipelineRunId, [FromQuery]int page, [FromQuery]int itemsPerPage)
     {
         var people = await GetDataAsync("people", pipelineRunId, page, itemsPerPage);
         var errors = await GetDataAsync("peopleErrors", pipelineRunId, page, itemsPerPage);
