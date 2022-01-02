@@ -1,6 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Management.DataFactory;
+using Microsoft.Azure.Management.DataFactory.Models;
+using Microsoft.Rest;
+using Microsoft.Identity.Client;
 using Azure.Identity;
 using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Specialized;
+using Azure.Storage.Blobs.Models;
 
 namespace AdfCsvToCosmos.Web.Controllers;
 
@@ -10,7 +16,6 @@ public class UploadController : ControllerBase
 {
     private readonly ILogger<UploadController> _logger;
     private readonly IConfiguration _configuration;
-
     private BlobContainerClient _blobContainerClient;
 
     public UploadController(ILogger<UploadController> logger,
@@ -34,7 +39,7 @@ public class UploadController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Get(int chunkNumber, long chunkSize, long currentChunkSize, long totalSize, string identifier, string filename, string relativePath, int totalChunks)
     {
-        var blobClient = _blobContainerClient.GetBlobClient($"{identifier}/{chunkNumber,0:00000000}");
+        var blobClient = _blobContainerClient.GetBlobClient($"{identifier}");
 
         if (await blobClient.ExistsAsync())
         {
@@ -46,12 +51,100 @@ public class UploadController : ControllerBase
     }
 
     [HttpPost]
-    public async Task<IActionResult> Post([FromForm]int chunkNumber, [FromForm]string identifier)
+    public async Task<IActionResult> Post([FromForm]int chunkNumber,
+                                          [FromForm]int totalChunks,
+                                          [FromForm]string identifier,
+                                          [FromForm]string fileName)
     {
-        var blobClient = _blobContainerClient.GetBlobClient($"{identifier}/{chunkNumber,0:00000000}");
+        var blobClient = _blobContainerClient.GetBlockBlobClient($"{identifier}.csv");
 
-        await blobClient.UploadAsync(Request.Form.Files.First().OpenReadStream());
+        var blockId = GetBlockId(identifier, chunkNumber);
+
+        await blobClient.StageBlockAsync(blockId, Request.Form.Files.First().OpenReadStream());
+
+        // When we are in the final chunk, commit the blob
+        if (chunkNumber == totalChunks)
+        {
+            var chunkNames = Enumerable.Range(1, chunkNumber).Select(chunk => GetBlockId(identifier, chunk));
+            await blobClient.CommitBlockListAsync(chunkNames, new CommitBlockListOptions()
+            {
+                HttpHeaders = new BlobHttpHeaders()
+                {
+                    ContentEncoding = "utf-8",
+                    ContentType = "text/csv"
+                }
+            });
+
+            var pipelineRunId = await RunPipelineAsync(identifier);
+
+            return new JsonResult(new { pipelineRunId = pipelineRunId });
+        }
 
         return Ok();
+    }
+
+    private static string GetBlockId(string fileName, int chunkNumber)
+    {
+        // Block Ids must have the same length
+        return EncodeToBase64($"{fileName}_{chunkNumber,0:000000}");
+    }
+
+    private static string EncodeToBase64(string rawText)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(rawText);
+        return System.Convert.ToBase64String(bytes);
+    }
+
+    private async Task<string> RunPipelineAsync(string identifier)
+    {
+        // Reference:
+        // https://docs.microsoft.com/en-us/azure/data-factory/quickstart-create-data-factory-dot-net#create-a-pipeline-run
+        var client = await CreateDataFactoryClientAsync();
+        var adfConfig = _configuration.GetSection("AzureDataFactory");
+        var resourceGroup = adfConfig.GetValue<string>("ResourceGroup");
+        var factoryName = adfConfig.GetValue<string>("DataFactoryName");
+        var pipelineName = adfConfig.GetValue<string>("PipelineName");
+
+        var parameters = new Dictionary<string, object>()
+        {
+            { "identifier", identifier }
+        };
+
+        var runResponse = await client.Pipelines.CreateRunWithHttpMessagesAsync(
+            resourceGroup,
+            factoryName,
+            "ImportCsvToCosmos",
+            parameters: parameters
+        );
+
+        _logger.LogInformation($"Pipeline Run Id: {runResponse.Body.RunId}");
+
+        return runResponse.Body.RunId;
+    }
+
+    private async Task<DataFactoryManagementClient> CreateDataFactoryClientAsync()
+    {
+        // Reference:
+        // https://docs.microsoft.com/en-us/azure/data-factory/quickstart-create-data-factory-dot-net#create-a-data-factory-client
+        var tenantId = _configuration.GetSection("AzureClientCredentials").GetValue<string>("TenantId");
+        var applicationId = _configuration.GetSection("AzureClientCredentials").GetValue<string>("ApplicationId");
+        var clientSecret = _configuration.GetSection("AzureClientCredentials").GetValue<string>("ClientSecret");
+        var app = ConfidentialClientApplicationBuilder
+                    .Create(applicationId)
+                    .WithAuthority("https://login.microsoftonline.com/" + tenantId)
+                    .WithClientSecret(clientSecret)
+                    .WithLegacyCacheCompatibility(false)
+                    .WithCacheOptions(CacheOptions.EnableSharedCacheOptions)
+                    .Build();
+        var result = await app.AcquireTokenForClient(new string[] { "https://management.azure.com//.default" })
+                        .ExecuteAsync();
+
+        var credential = new TokenCredentials(result.AccessToken);
+        var dataFactoryClient = new DataFactoryManagementClient(credential)
+        {
+            SubscriptionId = _configuration.GetValue<string>("AzureSubscriptionId")
+        };
+
+        return dataFactoryClient;
     }
 }
