@@ -98,7 +98,7 @@ public class UploadController : ControllerBase
     private async Task<IEnumerable<Person>> GetDataAsync(string collection, string pipelineRunId, int page, int itemsPerPage)
     {
         var database = _cosmosClient.GetDatabase("awesomedb");
-        var container = database.GetContainer("people");
+        var container = database.GetContainer(collection);
         var query = new QueryDefinition("Select * from people p where p.ImportIdentifier = @importIdentifier");
         query.WithParameter("@importIdentifier", pipelineRunId);
         var iterator = container.GetItemQueryIterator<Person>(query);
